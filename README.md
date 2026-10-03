@@ -15,7 +15,7 @@ This currently only supports the TOML format, however I shall introduce more for
 Add `configfs` and `serde` to your `Cargo.toml`
 ```toml
 [dependencies]
-configfs = "0.1.2"
+configfs = "0.2.0"
 serde = { version = "1", features = ["derive"] }
 ```
 
