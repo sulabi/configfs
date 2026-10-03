@@ -2,6 +2,10 @@
 name = "configfs-derive"
 version = "0.1.0"
 edition = "2024"
+description = "Derive macro for the configfs crate"
+license = "MIT or Apache-2.0"
+repository = "https://github.com/sulabi/configfs"
+readme = "README.md"
 
 [lib]
 proc-macro = true

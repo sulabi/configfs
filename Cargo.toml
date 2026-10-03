@@ -1,6 +1,6 @@
 [package]
 name = "configfs"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "A simple application configuration manager"
 readme = "README.md"
@@ -8,6 +8,9 @@ repository = "https://github.com/sulabi/configfs"
 license = "MIT or Apache-2.0"
 keywords = ["toml"]
 categories = ["config", "filesystem"]
+
+[workspace]
+members = ["configfs-derive/"]
 
 [[example]]
 name = "watcher"
