@@ -17,8 +17,9 @@ impl Default for AppSettings {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
-    let config = Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
-    let settings = config.read_or_default::<AppSettings>()?;
+    let config: Config<AppSettings> =
+        Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
+    let settings = config.read_or_default()?;
 
     if settings.verbose {
         println!("using port: {}", settings.port);

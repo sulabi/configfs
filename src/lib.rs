@@ -27,8 +27,8 @@
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let dir = tempfile::tempdir()?;
-//!     let config = Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
-//!     let settings = config.read_or_default::<AppSettings>()?;
+//!     let config: Config<AppSettings> = Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
+//!     let settings = config.read_or_default()?;
 //!
 //!     if settings.verbose {
 //!         println!("using port: {}", settings.port);
@@ -51,7 +51,7 @@
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let dir = tempfile::tempdir()?;
-//!     let config = Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
+//!     let config: Config<AppSettings> = Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
 //!     let settings = AppSettings {
 //!         username: "jimmy".into()
 //!     };
@@ -64,6 +64,7 @@
 
 use std::{
     fs, io,
+    marker::PhantomData,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
@@ -87,37 +88,53 @@ pub enum ConfigDirectory {
 }
 
 #[derive(Debug, Clone)]
-pub struct Config {
+pub struct Config<T> {
     /// Filename of the current configuration file (default `config.toml`)
     pub file: PathBuf,
+    _marker: PhantomData<T>,
 }
 
-impl Config {
+impl<T> Config<T> {
     pub fn new(dir: ConfigDirectory) -> Result<Self, ConfigError> {
         #[allow(clippy::infallible_destructuring_match)]
-        let config_path = match dir {
+        let (config_path, like_dir) = match dir {
             #[cfg(feature = "system-dirs")]
-            ConfigDirectory::System(app_name) => dirs::config_dir()
-                .map(|p| p.join(app_name))
-                .ok_or(ConfigError::SystemConfigNotFound)?,
+            ConfigDirectory::System(app_name) => (
+                dirs::config_dir()
+                    .map(|p| p.join(app_name))
+                    .ok_or(ConfigError::SystemConfigNotFound)?,
+                true,
+            ),
 
-            ConfigDirectory::Custom(config_path) => config_path,
+            ConfigDirectory::Custom(config_path) => {
+                let is_dir = Self::like_dir(&config_path);
+                (config_path, is_dir)
+            }
         };
 
-        if !config_path.exists() && config_path.is_dir() {
-            fs::create_dir(&config_path).map_err(|e| ConfigError::Io {
-                path: config_path.clone(),
-                source: e,
-            })?;
-        }
-
-        let config_file = if config_path.is_dir() {
+        let config_file = if like_dir {
             config_path.join("config.toml")
         } else {
             config_path.clone()
         };
 
-        Ok(Self { file: config_file })
+        Ok(Self {
+            file: config_file,
+            _marker: PhantomData,
+        })
+    }
+
+    fn like_dir(p: &Path) -> bool {
+        if p.exists() {
+            return p.is_dir();
+        }
+        let ending_sep = p
+            .as_os_str()
+            .to_string_lossy()
+            .ends_with(std::path::is_separator);
+        let no_ext = p.extension().is_none();
+
+        ending_sep || no_ext
     }
 
     /// Returns the parent of the file
@@ -126,33 +143,30 @@ impl Config {
     }
 
     /// Changes the current configuration file
-    pub fn set_file(&mut self, file: impl Into<PathBuf>) -> &mut Self {
-        self.file = file.into();
-        self
+    pub fn set_file<C>(self, file: impl Into<PathBuf>) -> Config<C> {
+        Config {
+            file: file.into(),
+            _marker: PhantomData,
+        }
     }
+}
 
-    /// Builder pattern to set the current configuration file
-    pub fn with_file(mut self, file: impl Into<PathBuf>) -> Self {
-        self.file = file.into();
-        self
-    }
-
-    /// Reads and deserializes the configuration file into type `T`
-    pub fn read<T: DeserializeOwned>(&self) -> Result<T, ConfigError> {
-        let content = fs::read_to_string(&self.file).map_err(|err| ConfigError::Io {
+impl<T: DeserializeOwned> Config<T> {
+    /// Reads and deserializes the configuration file
+    pub fn read(&self) -> Result<T, ConfigError> {
+        let content = fs::read_to_string(&self.file).map_err(|e| ConfigError::Io {
             path: self.file.clone(),
-            source: err,
+            source: e,
         })?;
 
         Ok(toml::from_str::<T>(&content)?)
     }
+}
 
-    /// Reads and deserializes the configuration file into type `T`. If missing config is written
-    /// and returns `T::default()`
-    pub fn read_or_default<T: Serialize + DeserializeOwned + Default>(
-        &self,
-    ) -> Result<T, ConfigError> {
-        match self.read::<T>() {
+impl<T: Serialize + DeserializeOwned + Default> Config<T> {
+    /// Reads and deserializes the configuration file. If missing config is written
+    pub fn read_or_default(&self) -> Result<T, ConfigError> {
+        match self.read() {
             Ok(data) => Ok(data),
             Err(ConfigError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
                 let default_conf = T::default();
@@ -162,9 +176,11 @@ impl Config {
             Err(err) => Err(err),
         }
     }
+}
 
-    /// Serializes and writes data `T` to disk as pretty TOML file.
-    pub fn write<T: Serialize>(&self, data: &T) -> Result<(), ConfigError> {
+impl<T: Serialize> Config<T> {
+    /// Serializes and writes config to disk as pretty TOML file.
+    pub fn write(&self, data: &T) -> Result<(), ConfigError> {
         if let Some(parent) = &self.file.parent()
             && !parent.exists()
         {
@@ -182,12 +198,12 @@ impl Config {
 
         Ok(())
     }
+}
 
+impl<T: Serialize + DeserializeOwned> Config<T> {
     /// Loads the config and stores it in a thread safe `SharedConfig`
-    pub fn load_shared<T: Serialize + DeserializeOwned>(
-        self,
-    ) -> Result<SharedConfig<T>, ConfigError> {
-        let data = self.read::<T>()?;
+    pub fn load_shared(self) -> Result<SharedConfig<T>, ConfigError> {
+        let data = self.read()?;
         Ok(SharedConfig {
             data: Arc::new(RwLock::new(data)),
             storage: Arc::new(self),
@@ -196,12 +212,11 @@ impl Config {
             on_reload: Arc::new(RwLock::new(None)),
         })
     }
-
+}
+impl<T: Serialize + DeserializeOwned + Default> Config<T> {
     /// Loads the config, writes and returns `T::default()` if missing, and stores it in a thread safe `SharedConfig`
-    pub fn load_shared_or_default<T: Serialize + DeserializeOwned + Default>(
-        self,
-    ) -> Result<SharedConfig<T>, ConfigError> {
-        let data = match self.read::<T>() {
+    pub fn load_shared_or_default(self) -> Result<SharedConfig<T>, ConfigError> {
+        let data = match self.read() {
             Ok(data) => data,
             Err(ConfigError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
                 let default_conf = T::default();

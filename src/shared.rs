@@ -15,7 +15,7 @@ type ReloadCallback<T> = Arc<dyn Fn(&T) + Send + Sync>;
 
 pub struct SharedConfig<T> {
     pub data: Arc<RwLock<T>>,
-    pub storage: Arc<Config>,
+    pub storage: Arc<Config<T>>,
 
     #[cfg(feature = "watcher")]
     pub on_reload: Arc<RwLock<Option<ReloadCallback<T>>>>,
