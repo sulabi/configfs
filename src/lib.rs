@@ -79,7 +79,9 @@ pub use shared::*;
 
 /// Target directory of the configuration files
 pub enum ConfigDirectory {
-    /// System default configuration directory (`~/.config/app_name`)
+    /// System default configuration directory path (`~/.config/app_name`)
+    /// Can also end with a file path. e.g:
+    /// `ConfigDirectory::System("app_name/this.toml")`
     #[cfg(feature = "system-dirs")]
     System(&'static str),
 
@@ -96,18 +98,18 @@ pub struct Config<T> {
 
 impl<T> Config<T> {
     pub fn new(dir: ConfigDirectory) -> Result<Self, ConfigError> {
-        #[allow(clippy::infallible_destructuring_match)]
         let (config_path, like_dir) = match dir {
             #[cfg(feature = "system-dirs")]
-            ConfigDirectory::System(app_name) => (
-                dirs::config_dir()
-                    .map(|p| p.join(app_name))
-                    .ok_or(ConfigError::SystemConfigNotFound)?,
-                true,
-            ),
+            ConfigDirectory::System(app_name) => {
+                let config_dir = dirs::config_dir().ok_or(ConfigError::SystemConfigNotFound)?;
+                let path = config_dir.join(app_name);
+                let is_dir = Config::like_dir(&path);
+
+                (path, is_dir)
+            }
 
             ConfigDirectory::Custom(config_path) => {
-                let is_dir = Self::like_dir(&config_path);
+                let is_dir = Config::like_dir(&config_path);
                 (config_path, is_dir)
             }
         };
@@ -115,26 +117,13 @@ impl<T> Config<T> {
         let config_file = if like_dir {
             config_path.join("config.toml")
         } else {
-            config_path.clone()
+            config_path
         };
 
         Ok(Self {
             file: config_file,
             _marker: PhantomData,
         })
-    }
-
-    fn like_dir(p: &Path) -> bool {
-        if p.exists() {
-            return p.is_dir();
-        }
-        let ending_sep = p
-            .as_os_str()
-            .to_string_lossy()
-            .ends_with(std::path::is_separator);
-        let no_ext = p.extension().is_none();
-
-        ending_sep || no_ext
     }
 
     /// Returns the parent of the file
@@ -148,6 +137,21 @@ impl<T> Config<T> {
             file: file.into(),
             _marker: PhantomData,
         }
+    }
+}
+
+impl Config<()> {
+    fn like_dir(p: &Path) -> bool {
+        if p.exists() {
+            return p.is_dir();
+        }
+        let ending_sep = p
+            .as_os_str()
+            .to_string_lossy()
+            .ends_with(std::path::is_separator);
+        let no_ext = p.extension().is_none();
+
+        ending_sep || no_ext
     }
 }
 
