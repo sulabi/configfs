@@ -66,7 +66,7 @@ use std::{
     fs, io,
     marker::PhantomData,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
+    sync::{Arc, OnceLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 pub use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -237,5 +237,80 @@ impl<T: Serialize + DeserializeOwned + Default> Config<T> {
             #[cfg(feature = "watcher")]
             on_reload: Arc::new(RwLock::new(None)),
         })
+    }
+}
+
+#[cfg(feature = "derive")]
+pub use configfs_derive::Config;
+
+pub trait ConfigFile: Serialize + DeserializeOwned + Sized + Send + Sync + 'static {
+    fn config_directory() -> ConfigDirectory;
+
+    #[doc(hidden)]
+    fn global() -> &'static OnceLock<RwLock<Self>>;
+
+    fn handle() -> Result<Config<Self>, ConfigError> {
+        Config::new(Self::config_directory())
+    }
+
+    fn init() -> Result<(), ConfigError> {
+        let value = Self::read()?;
+        let _ = Self::global().set(RwLock::new(value));
+        Ok(())
+    }
+
+    fn init_or_default() -> Result<(), ConfigError>
+    where
+        Self: Default,
+    {
+        let value = Self::read_or_default()?;
+        let _ = Self::global().set(RwLock::new(value));
+
+        Ok(())
+    }
+
+    fn get() -> RwLockReadGuard<'static, Self> {
+        Self::global()
+            .get()
+            .expect("Config not initilised. Call init() at startup to use")
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn get_mut() -> RwLockWriteGuard<'static, Self> {
+        Self::global()
+            .get()
+            .expect("Config not initilased. Call init() at startup to use")
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn update(f: impl FnOnce(&mut Self)) -> Result<(), ConfigError> {
+        let mut guard = Self::get_mut();
+        f(&mut guard);
+        Self::write(&guard)
+    }
+
+    fn read() -> Result<Self, ConfigError> {
+        Self::handle()?.read()
+    }
+
+    fn read_or_default() -> Result<Self, ConfigError>
+    where
+        Self: Default,
+    {
+        Self::handle()?.read_or_default()
+    }
+
+    fn write(&self) -> Result<(), ConfigError> {
+        Self::handle()?.write(self)
+    }
+
+    fn read_from(path: impl Into<PathBuf>) -> Result<Self, ConfigError> {
+        Config::<Self>::new(ConfigDirectory::Custom(path.into()))?.read()
+    }
+
+    fn write_to(&self, path: impl Into<PathBuf>) -> Result<(), ConfigError> {
+        Config::<Self>::new(ConfigDirectory::Custom(path.into()))?.write(self)
     }
 }
