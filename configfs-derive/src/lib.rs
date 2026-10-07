@@ -48,9 +48,9 @@ pub fn derive_config(input: TokenStream) -> TokenStream {
     }
 
     let dir = match (system, path) {
-        (Some(s), None) => quote!(::configfs::ConfigDirectory::System(#s)),
+        (Some(s), None) => quote!(::configfs::ConfigPath::System(#s)),
         (None, Some(p)) => {
-            quote!(::configfs::ConfigDirectory::Custom(::std::path::PathBuf::from(#p)))
+            quote!(::configfs::ConfigPath::Custom(::std::path::PathBuf::from(#p)))
         }
         _ => {
             return syn::Error::new_spanned(
@@ -64,7 +64,7 @@ pub fn derive_config(input: TokenStream) -> TokenStream {
 
     quote! {
         impl ::configfs::ConfigFile for #name {
-            fn config_directory() -> ::configfs::ConfigDirectory { #dir }
+            fn config_directory() -> ::configfs::ConfigPath { #dir }
 
             fn global() -> &'static ::std::sync::OnceLock::<::std::sync::RwLock<Self>> {
                 static CELL: ::std::sync::OnceLock<::std::sync::RwLock<#name>> = ::std::sync::OnceLock::new();

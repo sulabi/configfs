@@ -8,7 +8,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use configfs::{Config, ConfigDirectory};
+//! use configfs::{Config, ConfigPath};
 //! use serde::{Deserialize, Serialize};
 //!
 //! #[derive(Debug, Serialize, Deserialize)]
@@ -27,7 +27,7 @@
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let dir = tempfile::tempdir()?;
-//!     let config: Config<AppSettings> = Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
+//!     let config: Config<AppSettings> = Config::new(ConfigPath::Custom(dir.path().to_path_buf()))?;
 //!     let settings = config.read_or_default()?;
 //!
 //!     if settings.verbose {
@@ -41,7 +41,7 @@
 //! ## Writing Config
 //!
 //! ```rust
-//! use configfs::{Config, ConfigDirectory};
+//! use configfs::{Config, ConfigPath};
 //! use serde::Serialize;
 //!
 //! #[derive(Serialize)]
@@ -51,7 +51,7 @@
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let dir = tempfile::tempdir()?;
-//!     let config: Config<AppSettings> = Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
+//!     let config: Config<AppSettings> = Config::new(ConfigPath::Custom(dir.path().to_path_buf()))?;
 //!     let settings = AppSettings {
 //!         username: "jimmy".into()
 //!     };
@@ -78,15 +78,36 @@ pub use error::*;
 pub use shared::*;
 
 /// Target directory of the configuration files
-pub enum ConfigDirectory {
+pub enum ConfigPath {
     /// System default configuration directory path (`~/.config/app_name`)
     /// Can also end with a file path. e.g:
-    /// `ConfigDirectory::System("app_name/this.toml")`
+    /// `ConfigPath::System("app_name/this.toml")`
     #[cfg(feature = "system-dirs")]
     System(&'static str),
 
     /// Custom file path
     Custom(PathBuf),
+}
+
+impl ConfigPath {
+    pub fn resolve(&self) -> Result<(PathBuf, bool), ConfigError> {
+        match self {
+            #[cfg(feature = "system-dirs")]
+            ConfigPath::System(app_name) => {
+                let config_dir = dirs::config_dir().ok_or(ConfigError::SystemConfigNotFound)?;
+                let path = config_dir.join(app_name);
+                let is_dir = Config::like_dir(&path);
+
+                Ok((path, is_dir))
+            }
+
+            ConfigPath::Custom(config_path) => {
+                let is_dir = Config::like_dir(config_path);
+
+                Ok((config_path.to_path_buf(), is_dir))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -97,22 +118,8 @@ pub struct Config<T> {
 }
 
 impl<T> Config<T> {
-    pub fn new(dir: ConfigDirectory) -> Result<Self, ConfigError> {
-        let (config_path, like_dir) = match dir {
-            #[cfg(feature = "system-dirs")]
-            ConfigDirectory::System(app_name) => {
-                let config_dir = dirs::config_dir().ok_or(ConfigError::SystemConfigNotFound)?;
-                let path = config_dir.join(app_name);
-                let is_dir = Config::like_dir(&path);
-
-                (path, is_dir)
-            }
-
-            ConfigDirectory::Custom(config_path) => {
-                let is_dir = Config::like_dir(&config_path);
-                (config_path, is_dir)
-            }
-        };
+    pub fn new(dir: ConfigPath) -> Result<Self, ConfigError> {
+        let (config_path, like_dir) = dir.resolve()?;
 
         let config_file = if like_dir {
             config_path.join("config.toml")
@@ -244,7 +251,7 @@ impl<T: Serialize + DeserializeOwned + Default> Config<T> {
 pub use configfs_derive::Config;
 
 pub trait ConfigFile: Serialize + DeserializeOwned + Sized + Send + Sync + 'static {
-    fn config_directory() -> ConfigDirectory;
+    fn config_directory() -> ConfigPath;
 
     #[doc(hidden)]
     fn global() -> &'static OnceLock<RwLock<Self>>;
@@ -307,10 +314,10 @@ pub trait ConfigFile: Serialize + DeserializeOwned + Sized + Send + Sync + 'stat
     }
 
     fn read_from(path: impl Into<PathBuf>) -> Result<Self, ConfigError> {
-        Config::<Self>::new(ConfigDirectory::Custom(path.into()))?.read()
+        Config::<Self>::new(ConfigPath::Custom(path.into()))?.read()
     }
 
     fn write_to(&self, path: impl Into<PathBuf>) -> Result<(), ConfigError> {
-        Config::<Self>::new(ConfigDirectory::Custom(path.into()))?.write(self)
+        Config::<Self>::new(ConfigPath::Custom(path.into()))?.write(self)
     }
 }

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use configfs::{Config, ConfigDirectory};
+use configfs::{Config, ConfigPath};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
@@ -19,8 +19,7 @@ impl Default for AppSettings {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
-    let config: Config<AppSettings> =
-        Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
+    let config: Config<AppSettings> = Config::new(ConfigPath::Custom(dir.path().to_path_buf()))?;
 
     let config_file = &config.file.clone();
 

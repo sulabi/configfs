@@ -1,4 +1,4 @@
-use configfs::{Config, ConfigDirectory};
+use configfs::{Config, ConfigPath};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -8,7 +8,7 @@ struct AppSettings {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
-    let config = Config::new(ConfigDirectory::Custom(dir.path().to_path_buf()))?;
+    let config = Config::new(ConfigPath::Custom(dir.path().to_path_buf()))?;
     let settings = AppSettings {
         username: "jimmy".into(),
     };

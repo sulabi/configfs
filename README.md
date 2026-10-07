@@ -24,7 +24,7 @@ serde = { version = "1", features = ["derive"] }
 ### Reading Config
 
 ```rust
-use configfs::{Config, ConfigDirectory};
+use configfs::{Config, ConfigPath};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,7 +42,7 @@ impl Default for AppSettings {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::new(ConfigDirectory::Custom("./appconf".into()))?;
+    let config = Config::new(ConfigPath::Custom("./appconf".into()))?;
     let settings = config.read_or_default::<AppSettings>()?;
 
     if settings.verbose {
@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Writing Config
 
 ```rust
-use configfs::{Config, ConfigDirectory};
+use configfs::{Config, ConfigPath};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -65,7 +65,7 @@ struct AppSettings {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::new(ConfigDirectory::Custom("./appconf".into()))?;
+    let config = Config::new(ConfigPath::Custom("./appconf".into()))?;
     let settings = AppSettings {
         username: "jimmy".into()
     };
@@ -89,7 +89,7 @@ configfs = { version = "0.1", features = ["system-dirs"] }
 An example that will save the config folder `app` in `~/.config/`.
 
 ```rust
-let config = Config::new(ConfigDirectory::System("app"))?;
+let config = Config::new(ConfigPath::System("app"))?;
 ```
 
 ### `watcher`
